@@ -2,6 +2,7 @@ package cl.eng.market.ui.screen
 
 import android.app.Activity
 import android.content.Context
+import android.util.Log
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -30,8 +31,12 @@ import cl.eng.market.R
 import cl.eng.market.data.model.Producto
 import cl.eng.market.util.TTSManager
 import com.airbnb.lottie.compose.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import java.util.*
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+private const val TAG = "ProductoScreen"
 
 @Composable
 fun ProductoScreen(
@@ -40,51 +45,65 @@ fun ProductoScreen(
     busquedaRealizada: Boolean,
     onBuscar: (String) -> Unit,
     onLimpiarProducto: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    productoEncontrado: Boolean,
+    cargando: Boolean,
+    codigoActual: String,
 ) {
     var scanValue by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.arrow_down))
     val lottieAnimatable = rememberLottieAnimatable()
     val ttsManager = remember { TTSManager(context) }
 
     var productoMostrado by remember { mutableStateOf<Producto?>(null) }
-    var triggerRepetido by remember { mutableStateOf(UUID.randomUUID().toString()) }
-
+    var mostrarJob by remember { mutableStateOf<Job?>(null) }
+    var trigger by remember { mutableStateOf(UUID.randomUUID()) }
+    var trigger2 by remember { mutableStateOf(UUID.randomUUID()) }
     val producto = productos.firstOrNull()
 
-    // 🔁 Siempre reinicia cuando llega un producto nuevo o igual
-    LaunchedEffect(producto?.Codigo, producto?.PrecioVenta) {
+
+    LaunchedEffect(producto) {
         if (producto != null) {
-            triggerRepetido = UUID.randomUUID().toString()
+            trigger = UUID.randomUUID()
+            Log.d(TAG, "Producto recibido: $producto")
+            Log.d(TAG, "Trigger actualizado: $trigger")
         }
     }
 
-    // 🗣️ Mostrar producto, hablar y limpiar después de 10s
-    LaunchedEffect(triggerRepetido) {
+    // Mostrar producto y TTS incluso si es el mismo
+    LaunchedEffect(trigger) {
         producto?.let {
+            Log.d(TAG, "Nuevo producto recibido: ${it.Nombre}")
+            mostrarJob?.cancel() // Cancela visualización anterior si existía
+
             productoMostrado = it
             ttsManager.speak("${it.PrecioVenta} pesos")
 
-            delay(10_000)
-
-            productoMostrado = null
-            onLimpiarProducto()
+            mostrarJob = scope.launch {
+                delay(10_000)
+                Log.d(TAG, "Ocultando producto después de 10s")
+                productoMostrado = null
+                onLimpiarProducto()
+            }
         }
     }
 
-    // ❌ Producto no encontrado: hablar + limpiar pantalla
-    LaunchedEffect(busquedaRealizada, producto) {
-        if (busquedaRealizada && producto == null) {
-            productoMostrado = null // 👈 LIMPIAR
+    // Producto no encontrado
+    LaunchedEffect(busquedaRealizada, productoEncontrado, cargando) {
+        if (busquedaRealizada && !productoEncontrado && !cargando) {
+            productoMostrado = null
+            Log.d(TAG, "Producto no encontrado para código: $codigoActual")
             ttsManager.speak("El producto no existe. Validar en caja")
         }
     }
 
-    // 🎯 Enfocar campo oculto y ocultar teclado
+    // Ocultar teclado al cargar
     LaunchedEffect(Unit) {
+        Log.d(TAG, "Solicitando foco y ocultando teclado")
         focusRequester.requestFocus()
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         (context as? Activity)?.currentFocus?.windowToken?.let {
@@ -92,9 +111,21 @@ fun ProductoScreen(
         }
     }
 
-    // ▶️ Animación loop
+    // Animación flecha
     LaunchedEffect(composition) {
         lottieAnimatable.animate(composition, iterations = LottieConstants.IterateForever)
+    }
+
+    LaunchedEffect(scanValue) {
+        if (scanValue.isNotBlank()) {
+            Log.d(TAG, "Código ingresado: $scanValue")
+            onBuscar(scanValue)
+            // Limpiar después para permitir repetir el mismo código
+            scanValue = ""
+            // Cambiar trigger para forzar recomposición si necesitas
+            trigger2 = UUID.randomUUID()
+            Log.d(TAG, "Trigger actualizado: $trigger2")
+        }
     }
 
     Column(
@@ -103,7 +134,6 @@ fun ProductoScreen(
             .background(Color.White),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Logo
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -117,7 +147,6 @@ fun ProductoScreen(
             )
         }
 
-        // Pantalla resultado
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -126,15 +155,10 @@ fun ProductoScreen(
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                // TextField oculto para escáner
                 TextField(
                     value = scanValue,
                     onValueChange = {
                         scanValue = it
-                        if (it.isNotBlank()) {
-                            onBuscar(it)
-                            scanValue = ""
-                        }
                     },
                     modifier = modifier
                         .focusRequester(focusRequester)
@@ -146,7 +170,6 @@ fun ProductoScreen(
                     readOnly = false
                 )
 
-                // Código del producto
                 Text(
                     text = productoMostrado?.Codigo ?: "",
                     fontSize = 28.sp,
@@ -161,7 +184,6 @@ fun ProductoScreen(
                     )
                 )
 
-                // Producto no encontrado
                 if (busquedaRealizada && producto == null) {
                     Text(
                         text = "EL PRODUCTO NO EXISTE\nValidar en caja",
@@ -178,7 +200,23 @@ fun ProductoScreen(
                     )
                 }
 
-                // Nombre del producto
+                if (cargando) {
+                    Text(
+                        text = "Buscando...",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Yellow,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        style = TextStyle(
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.7f),
+                                offset = Offset(2f, 2f),
+                                blurRadius = 4f
+                            )
+                        )
+                    )
+                }
+
                 Text(
                     text = productoMostrado?.Nombre ?: "",
                     fontSize = 42.sp,
@@ -195,7 +233,6 @@ fun ProductoScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Precio
                 Text(
                     text = productoMostrado?.PrecioVenta ?: "",
                     fontSize = 95.sp,
@@ -212,7 +249,6 @@ fun ProductoScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Instrucción
                 Text(
                     text = "Acerca el producto al lector",
                     fontSize = 34.sp,
@@ -227,15 +263,14 @@ fun ProductoScreen(
                     )
                 )
 
-                // Animación
                 LottieAnimation(
                     composition = composition,
                     progress = lottieAnimatable.progress,
                     modifier = Modifier.size(170.dp)
                 )
 
-                // Error general
                 error?.let {
+                    Log.e(TAG, "Error visualizado en pantalla: $it")
                     Text(
                         text = it,
                         color = Color.Red,
@@ -247,9 +282,9 @@ fun ProductoScreen(
         }
     }
 
-    // Cleanup TTS
     DisposableEffect(context) {
         onDispose {
+            Log.d(TAG, "Liberando recursos del TTS")
             ttsManager.shutdown()
         }
     }

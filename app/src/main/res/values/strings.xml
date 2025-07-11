@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">ConsultarPrecio</string>
-    <string name="base_url">http://10.10.11.231/</string>
+    <string name="base_url">https://aguas-azules2024.pos-tunel.com/</string>
 </resources>

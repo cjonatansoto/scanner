@@ -46,7 +46,10 @@ class MainActivity : ComponentActivity() {
                         busquedaRealizada = busquedaRealizada, // 👈 AÑADIDO
                         onBuscar = { codigo -> viewModel.onCodigoEscaneado(codigo) },
                         onLimpiarProducto = { viewModel.limpiarProducto() },
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        productoEncontrado = viewModel.productoEncontrado.value, // ✅ Valor real
+                        codigoActual = viewModel.codigoActual.value,
+                        cargando = viewModel.cargando.value
                     )
                 }
             }
