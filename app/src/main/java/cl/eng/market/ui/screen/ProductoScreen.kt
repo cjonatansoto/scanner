@@ -62,10 +62,9 @@ fun ProductoScreen(
     var productoMostrado by remember { mutableStateOf<Producto?>(null) }
     var mostrarJob by remember { mutableStateOf<Job?>(null) }
     var trigger by remember { mutableStateOf(UUID.randomUUID()) }
-    var trigger2 by remember { mutableStateOf(UUID.randomUUID()) }
     val producto = productos.firstOrNull()
 
-
+    // Actualizar trigger y log cuando cambia producto
     LaunchedEffect(producto) {
         if (producto != null) {
             trigger = UUID.randomUUID()
@@ -74,11 +73,11 @@ fun ProductoScreen(
         }
     }
 
-    // Mostrar producto y TTS incluso si es el mismo
+    // Mostrar producto y usar TTS cuando cambia trigger
     LaunchedEffect(trigger) {
         producto?.let {
             Log.d(TAG, "Nuevo producto recibido: ${it.Nombre}")
-            mostrarJob?.cancel() // Cancela visualización anterior si existía
+            mostrarJob?.cancel()
 
             productoMostrado = it
             ttsManager.speak("${it.PrecioVenta} pesos")
@@ -92,7 +91,7 @@ fun ProductoScreen(
         }
     }
 
-    // Producto no encontrado
+    // Manejar producto no encontrado y notificar TTS
     LaunchedEffect(busquedaRealizada, productoEncontrado, cargando) {
         if (busquedaRealizada && !productoEncontrado && !cargando) {
             productoMostrado = null
@@ -101,7 +100,7 @@ fun ProductoScreen(
         }
     }
 
-    // Ocultar teclado al cargar
+    // Ocultar teclado y solicitar foco al iniciar la pantalla
     LaunchedEffect(Unit) {
         Log.d(TAG, "Solicitando foco y ocultando teclado")
         focusRequester.requestFocus()
@@ -111,20 +110,17 @@ fun ProductoScreen(
         }
     }
 
-    // Animación flecha
+    // Animación continua flecha
     LaunchedEffect(composition) {
         lottieAnimatable.animate(composition, iterations = LottieConstants.IterateForever)
     }
 
+    // Detectar cambios en scanValue para ejecutar búsqueda y limpiar input
     LaunchedEffect(scanValue) {
         if (scanValue.isNotBlank()) {
             Log.d(TAG, "Código ingresado: $scanValue")
             onBuscar(scanValue)
-            // Limpiar después para permitir repetir el mismo código
-            scanValue = ""
-            // Cambiar trigger para forzar recomposición si necesitas
-            trigger2 = UUID.randomUUID()
-            Log.d(TAG, "Trigger actualizado: $trigger2")
+            scanValue = "" // Limpia para permitir mismo código repetido
         }
     }
 
@@ -157,9 +153,7 @@ fun ProductoScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 TextField(
                     value = scanValue,
-                    onValueChange = {
-                        scanValue = it
-                    },
+                    onValueChange = { scanValue = it },
                     modifier = modifier
                         .focusRequester(focusRequester)
                         .size(1.dp)
@@ -289,3 +283,4 @@ fun ProductoScreen(
         }
     }
 }
+
